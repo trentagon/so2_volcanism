@@ -18,14 +18,12 @@ def main():
     zahnle_rx_and_thermo_files(
         atoms_names=['H','O','C','S'],
         rxns_filename=os.path.join(THISFILE, 'input/zahnle_HOCS.yaml'),
-        thermo_filename=None
+        thermo_filename=os.path.join(THISFILE, 'input/thermo.yaml')
     )
     with open(os.path.join(THISFILE, 'input/zahnle_HOCS.yaml'),'r') as f:
         dat = yaml.load(f, yaml.Loader)
     species = []
     for i,sp in enumerate(dat['species']):
-        if sp.get('condensate',False):
-            continue
         species.append(sp['name'])
 
     species_file_for_climate(

@@ -17,6 +17,7 @@ def _build_default_climate_model():
         species_file=os.path.join(THISFILE, "input/species_climate.yaml"),
         settings_file=os.path.join(THISFILE, "input/settings_climate.yaml"),
         flux_file=os.path.join(THISFILE, "input/gj176_scaled_to_l9859b.txt"),
+        thermo_file=os.path.join(THISFILE, "input/thermo.yaml"),
     )
 
 def get_climate_model():

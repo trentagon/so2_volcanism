@@ -22,7 +22,7 @@ from photochem.equilibrate import ChemEquiAnalysis
 
 class AdiabatClimateEquilibrium(AdiabatClimate):
 
-    def __init__(self, species_file, settings_file, flux_file, data_dir=None):
+    def __init__(self, species_file, settings_file, flux_file, thermo_file=None, data_dir=None):
         """Initialize the climate-equilibrium wrapper.
 
         Parameters
@@ -34,6 +34,9 @@ class AdiabatClimateEquilibrium(AdiabatClimate):
             Path to the climate settings YAML file.
         flux_file : str
             Path to the stellar flux file used by the climate model.
+        thermo_file : str or None, optional
+            Path to the thermo/species file used by ``ChemEquiAnalysis``.
+            If ``None``, ``species_file`` is used.
         data_dir : str or None, optional
             Optional path to a photochem/climate data directory.
 
@@ -55,8 +58,11 @@ class AdiabatClimateEquilibrium(AdiabatClimate):
         self.use_make_column_P_guess = False
         self.verbose = False
 
+        if thermo_file is None:
+            thermo_file = species_file
+
         # Save an equilibrium solver
-        self.eqsolver = ChemEquiAnalysis(species_file)
+        self.eqsolver = ChemEquiAnalysis(thermo_file)
 
         # Do some extra work to get composition
         with open(species_file,'r') as f:
