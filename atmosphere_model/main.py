@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 from threadpoolctl import threadpool_limits
 
@@ -6,11 +7,12 @@ import os
 THISFILE = os.path.dirname(os.path.abspath(__file__))
 
 try:
-    from .models import AdiabatClimateEquilibrium
+    from .models import AdiabatClimateEquilibrium, EvoAtmosphereRobust
 except ImportError:
-    from models import AdiabatClimateEquilibrium
+    from models import AdiabatClimateEquilibrium, EvoAtmosphereRobust
 
 _CLIMATE_MODEL = None
+_PHOTOCHEMICAL_MODEL = None
 
 def _build_default_climate_model():
     return AdiabatClimateEquilibrium(
@@ -21,7 +23,6 @@ def _build_default_climate_model():
     )
 
 def get_climate_model():
-    """Return the shared default climate model instance."""
     global _CLIMATE_MODEL
     if _CLIMATE_MODEL is None:
         _CLIMATE_MODEL = _build_default_climate_model()
@@ -79,6 +80,40 @@ def plot(P, T, mix, ylim, filename, P_ref=1e3, input_mix=None):
         os.makedirs(outdir, exist_ok=True)
     plt.savefig(filename, dpi=150, bbox_inches='tight')
 
+def plot_comparison(P_eq, mix_eq, P_photo, T_photo, mix_photo, ylim, filename):
+    species_to_plot = ['H2O','CO2','SO2','CO','H2','H2S','S2','S3','S4','S8']
+
+    plt.rcParams.update({'font.size': 13})
+    fig, ax = plt.subplots(1,1,figsize=[6,4.5])
+
+    colors = plt.cm.tab10(np.linspace(0.0, 1.0, len(species_to_plot)))
+    for i, sp in enumerate(species_to_plot):
+        if sp not in mix_eq or sp not in mix_photo:
+            continue
+        color = colors[i]
+        ax.plot(mix_eq[sp], P_eq/1e6, lw=2, c=color, ls='-', label=sp)
+        ax.plot(mix_photo[sp], P_photo/1e6, lw=2, c=color, ls=':')
+
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlim(1e-10, 1.2)
+    ax.set_ylim(*ylim)
+
+    ax1 = ax.twiny()
+    ax1.plot(T_photo, P_photo/1e6, c='k', lw=2, ls='--')
+    ax1.set_xlabel('Temperature (K)')
+
+    species_legend = ax.legend(ncol=2, bbox_to_anchor=(1.02, 1.02), loc='upper left')
+    style_handles = [
+        Line2D([0], [0], color='k', lw=2, ls='-', label='Equilibrium'),
+        Line2D([0], [0], color='k', lw=2, ls=':', label='Photochemical'),
+        Line2D([0], [0], color='k', lw=2, ls='--', label='Temperature'),
+    ]
+    ax1.legend(handles=style_handles, bbox_to_anchor=(1.02, 0.25), loc='upper left')
+    ax.add_artist(species_legend)
+
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+
 def run(P_surf, mix, verbose=False, model=None):
     """Run the coupled climate equilibrium solve.
 
@@ -113,6 +148,54 @@ def run(P_surf, mix, verbose=False, model=None):
 
     return P, T, mix
 
+def run_photochemistry(P, T, mix, Kzz, verbose=True, model=None):
+    """Run the photochemical model to steady state from a prescribed atmosphere.
+
+    Parameters
+    ----------
+    P : ndarray
+        Pressure profile in dyn/cm^2.
+    T : ndarray
+        Temperature profile in K.
+    mix : dict
+        Mapping from species name to unitless mixing-ratio profiles aligned
+        with ``P`` and ``T``.
+    Kzz : ndarray
+        Eddy diffusion coefficient profile in cm^2/s.
+    verbose : bool, optional
+        If ``True``, enables verbose output during the robust steady-state
+        search.
+    model : EvoAtmosphereRobust or None, optional
+        Photochemical model instance to use. If ``None``, the module-level
+        default model is lazily created and reused.
+
+    Returns
+    -------
+    tuple
+        ``(P, T, mix)`` where ``P`` is pressure in dyn/cm^2, ``T`` is
+        temperature in K, and ``mix`` maps species names to unitless
+        mixing-ratio profiles after the steady-state solve.
+
+    Notes
+    -----
+    The default photochemical setup assumes zero-flux boundary conditions for
+    all species.
+    """
+
+    # Get model
+    pc = get_photochemical_model() if model is None else model
+    pc.rdat.verbose = verbose
+
+    # Initialize
+    pc.initialize_to_PT(P, T, Kzz, mix)
+
+    # Solve
+    pc.find_steady_state_robust()
+
+    # Return
+    P1, T1, mix1 = pc.return_atmosphere()
+    return P1, T1, mix1
+
 def example():
     """Run a demonstration climate calculation and save a figure.
 
@@ -142,6 +225,36 @@ def example():
         input_mix=mix_input,
     )
 
+def example_photochemistry():
+
+    P_surf = 1.0e6 # dynes/cm^2
+    # Some composition
+    mix = {
+        'CO2': 0.5,
+        'H2O': 0.2,
+        'SO2': 0.29,
+        'H2': 0.01
+    }
+
+    # Run climate/equilibrium chem
+    P, T, mix = run(P_surf, mix, verbose=True)
+
+    # Choose a Kzz vs P, then run photochemistry
+    Kzz = np.ones_like(P)*1.0e6
+    P1, T1, mix1 = run_photochemistry(P, T, mix, Kzz)
+
+    # Plot comparison
+    plot_comparison(
+        P,
+        mix,
+        P1,
+        T1,
+        mix1,
+        ylim=(P1[0]/1e6, P1[-1]/1e6),
+        filename='figures/test_photochemistry.pdf',
+    )
+
 if __name__ == "__main__":
     _ = threadpool_limits(limits=4) # set number of threads
     example()
+    example_photochemistry()
