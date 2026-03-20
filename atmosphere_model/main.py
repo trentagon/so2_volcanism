@@ -28,22 +28,7 @@ def get_climate_model():
         _CLIMATE_MODEL = _build_default_climate_model()
     return _CLIMATE_MODEL
 
-def _build_default_photochemical_model():
-    pc = EvoAtmosphereRobust(
-        mechanism_file='input/zahnle_HOCS.yaml',
-        settings_file='input/settings.yaml',
-        flux_file='input/gj176_scaled_to_l9859b.txt',
-    )  
-    pc.var.conv_longdy = 5e-2 # This is a little loose but maybe OK.
-    return pc
-
-def get_photochemical_model():
-    global _PHOTOCHEMICAL_MODEL
-    if _PHOTOCHEMICAL_MODEL is None:
-        _PHOTOCHEMICAL_MODEL = _build_default_photochemical_model()
-    return _PHOTOCHEMICAL_MODEL
-
-def plot(P, T, mix, ylim, filename, P_ref=1e3):
+def plot(P, T, mix, ylim, filename, P_ref=1e3, input_mix=None):
     plt.rcParams.update({'font.size': 13})
     fig, ax = plt.subplots(1,1,figsize=[5,4])
 
@@ -55,9 +40,31 @@ def plot(P, T, mix, ylim, filename, P_ref=1e3):
         mix_layer[i] = mix[sp][ind]
     inds = np.argsort(mix_layer)[::-1]
     
+    species_colors = {}
     for i in inds[:10]:
         sp = species_layer[i]
-        ax.plot(mix[sp], P/1e6, lw=2, label=sp)
+        line, = ax.plot(mix[sp], P/1e6, lw=2, label=sp)
+        species_colors[sp] = line.get_color()
+
+    # Optional vertical guides for input SO2/CO2/H2O mixing ratios.
+    if input_mix is not None:
+        guide_species = ['SO2', 'CO2', 'H2O']
+        fallback_colors = {'SO2': 'tab:red', 'CO2': 'tab:green', 'H2O': 'tab:purple'}
+        for sp in guide_species:
+            val = input_mix.get(sp, None)
+            if val is None:
+                continue
+            val = float(val)
+            if np.isfinite(val) and val > 0.0:
+                guide_color = species_colors.get(sp, fallback_colors[sp])
+                ax.axvline(
+                    val,
+                    linestyle='--',
+                    linewidth=1.4,
+                    color=guide_color,
+                    alpha=0.9,
+                    label=f'{sp} input',
+                )
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_xlim(1e-10,1.2)
@@ -68,7 +75,9 @@ def plot(P, T, mix, ylim, filename, P_ref=1e3):
     ax1.plot(T, P/1e6, c='k', lw=2, ls='--', label='Temp.')
     ax1.set_xlabel('Temperature (K)')
     ax1.legend(ncol=1,bbox_to_anchor=(1.02, .2), loc='upper left')
-
+    outdir = os.path.dirname(filename)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
     plt.savefig(filename, dpi=150, bbox_inches='tight')
 
 def plot_comparison(P_eq, mix_eq, P_photo, T_photo, mix_photo, ylim, filename):
@@ -198,15 +207,23 @@ def example():
 
     P_surf = 1.0e6 # dynes/cm^2
     # Some composition
-    mix = {
+    mix_input = {
         'CO2': 0.5,
         'H2O': 0.2,
         'SO2': 0.29,
         'H2': 0.01
     }
-    P, T, mix = run(P_surf, mix, verbose=True)
+    P, T, mix = run(P_surf, mix_input, verbose=True)
 
-    plot(P, T, mix, ylim=(P[0]/1e6,P[-1]/1e6), filename='figures/test.pdf', P_ref=1e3)
+    plot(
+        P,
+        T,
+        mix,
+        ylim=(P[0]/1e6, P[-1]/1e6),
+        filename='atmosphere_model/figures/test.pdf',
+        P_ref=1e3,
+        input_mix=mix_input,
+    )
 
 def example_photochemistry():
 
